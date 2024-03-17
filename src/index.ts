@@ -1,6 +1,8 @@
+// Import required modules
 import { v4 as uuidv4 } from 'uuid';
 import { Server, StableBTreeMap, ic } from 'azle';
-import express from 'express';
+import express, { Request, Response, NextFunction } from 'express';
+
 
 /**
  * `donationsStorage` - it's a key-value datastructure that is used to store donations.
@@ -17,10 +19,9 @@ import express from 'express';
  * 1) 0 - memory id where to initialize a map.
  */
 
-/**
- This type represents a donation.
- */
-class Donation {
+
+// Define Donation interface
+interface Donation {
    id: string;
    amount: number;
    donorName: string;
@@ -28,36 +29,79 @@ class Donation {
    createdAt: Date;
 }
 
+// Initialize donations storage
 const donationsStorage = StableBTreeMap<string, Donation>(0);
 
-export default Server(() => {
-   const app = express();
-   app.use(express.json());
+// Create Express app
+const app = express();
 
-   app.post("/donations", (req, res) => {
-      const donation: Donation =  {id: uuidv4(), createdAt: getCurrentDate(), ...req.body};
+// Middleware to parse JSON request bodies
+app.use(express.json());
+
+// Error handling middleware
+app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
+   console.error(err.stack);
+   res.status(500).send('Internal Server Error');
+});
+
+// POST endpoint to add a new donation
+app.post("/donations", (req: Request, res: Response) => {
+   try {
+      // Validate request body
+      const { amount, donorName, message }: Partial<Donation> = req.body;
+      if (!amount || !donorName || !message) {
+         return res.status(400).send('Invalid donation data');
+      }
+
+      // Create new donation object
+      const donation: Donation = {
+         id: uuidv4(),
+         createdAt: getCurrentDate(),
+         amount,
+         donorName,
+         message
+      };
+
+      // Insert donation into storage
       donationsStorage.insert(donation.id, donation);
+
+      // Send response
       res.json(donation);
-   });
+   } catch (error) {
+      next(error);
+   }
+});
 
-   app.get("/donations", (req, res) => {
+// GET endpoint to retrieve all donations
+app.get("/donations", (req: Request, res: Response) => {
+   try {
       res.json(donationsStorage.values());
-   });
+   } catch (error) {
+      next(error);
+   }
+});
 
-   app.get("/donations/:id", (req, res) => {
+// GET endpoint to retrieve a specific donation by ID
+app.get("/donations/:id", (req: Request, res: Response) => {
+   try {
       const donationId = req.params.id;
       const donationOpt = donationsStorage.get(donationId);
       if ("None" in donationOpt) {
-         res.status(404).send(`the donation with id=${donationId} not found`);
-      } else {
-         res.json(donationOpt.Some);
+         return res.status(404).send(`Donation with id=${donationId} not found`);
       }
-   });
-
-   return app.listen();
+      res.json(donationOpt.Some);
+   } catch (error) {
+      next(error);
+   }
 });
 
+// Helper function to get current date
 function getCurrentDate() {
    const timestamp = new Number(ic.time());
    return new Date(timestamp.valueOf() / 1000_000);
 }
+
+// Export Express app
+export default Server(() => {
+   return app.listen();
+});
