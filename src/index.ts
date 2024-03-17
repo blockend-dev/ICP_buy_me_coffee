@@ -1,12 +1,12 @@
 // Import necessary modules
 import { v4 as uuidv4 } from 'uuid';
 import { Server, StableBTreeMap, ic } from 'azle';
-import express from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 
 /**
  * This type represents a skill record in the blockchain.
  */
-class SkillRecord {
+interface SkillRecord {
     id: string;
     skill: string;
     owner: string; // Representing the owner's identifier (e.g., user ID)
@@ -24,20 +24,41 @@ export default Server(() => {
     const app = express();
     app.use(express.json());
 
-    // Endpoint to add a new skill record to the blockchain
-    app.post("/skill-records", (req, res) => {
-        const skillRecord: SkillRecord = {
-            id: uuidv4(),
-            createdAt: getCurrentDate(),
-            ...req.body,
-            verified: false, // By default, newly added skill records are not verified
-            verifier: "",    // Initialize verifier as empty string
-        };
-        skillRecordsStorage.insert(skillRecord.id, skillRecord);
-        res.json(skillRecord);
+    // Middleware to handle errors
+    app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
+        console.error(err.stack);
+        res.status(500).send('Internal Server Error');
     });
 
-    // Endpoint to get all skill records from the blockchain
+    // Endpoint to add a new skill record to the blockchain
+    app.post("/skill-records", (req: Request, res: Response) => {
+        try {
+            // Validate request body
+            const { skill, owner }: Partial<SkillRecord> = req.body;
+            if (!skill || !owner) {
+                return res.status(400).send('Invalid skill record data');
+            }
+
+            // Create new skill record object
+            const skillRecord: SkillRecord = {
+                id: uuidv4(),
+                createdAt: getCurrentDate(),
+                verified: false,
+                verifier: "",
+                ...req.body
+            };
+
+            // Insert skill record into storage
+            skillRecordsStorage.insert(skillRecord.id, skillRecord);
+
+            // Send response
+            res.json(skillRecord);
+        } catch (error) {
+            next(error);
+        }
+    });
+
+   // Endpoint to get all skill records from the blockchain
     app.get("/skill-records", (req, res) => {
         res.json(skillRecordsStorage.values());
     });
